@@ -1,65 +1,86 @@
-node{
-    
-    def mavenHome
-    def mavenCMD
-    def docker
-    def dockerCMD
-    def tagName
-    
-    stage('prepare enviroment'){
-        echo 'initialize all the variables'
-        mavenHome = tool name: 'maven' , type: 'maven'
-        mavenCMD = "${mavenHome}/bin/mvn"
-        docker = tool name: 'docker' , type: 'org.jenkinsci.plugins.docker.commons.tools.DockerTool'
-        dockerCMD = "${docker}/bin/docker"
-        tagName="3.0"
+pipeline {
+    agent any
+
+    environment {
+        MAVEN_HOME = tool name: 'maven', type: 'maven'
+        MAVEN_CMD = "${MAVEN_HOME}/bin/mvn"
+        DOCKER_CMD = "/usr/bin/docker"
+        TAG_NAME = "3.0"
     }
-    
-    stage('git code checkout'){
-        try{
-            echo 'checkout the code from git repository'
-            git 'https://github.com/shubhamkushwah123/star-agile-insurance-project.git'
+
+    stages {
+        stage('Prepare Environment') {
+            steps {
+                echo 'Initializing all variables...'
+            }
         }
-        catch(Exception e){
-            echo 'Exception occured in Git Code Checkout Stage'
-            currentBuild.result = "FAILURE"
-            emailext body: '''Dear All,
-            The Jenkins job ${JOB_NAME} has been failed. Request you to please have a look at it immediately by clicking on the below link. 
-            ${BUILD_URL}''', subject: 'Job ${JOB_NAME} ${BUILD_NUMBER} is failed', to: 'shubham@gmail.com'
+
+        stage('Git Code Checkout') {
+            steps {
+                script {
+                    try {
+                        echo 'Checking out the code from Git repository...'
+                        git 'https://github.com/shamashaik19/project3.git'
+                    } catch (Exception e) {
+                        echo 'Exception occurred in Git Code Checkout Stage'
+                        currentBuild.result = "FAILURE"
+                        emailext body: '''Dear All,
+                        The Jenkins job ${JOB_NAME} has failed. Please check immediately at:
+                        ${BUILD_URL}''', subject: 'Job ${JOB_NAME} ${BUILD_NUMBER} failed', to: 'shamashaik.eee.rymec@gmail.com'
+                    }
+                }
+            }
         }
-    }
-    
-    stage('Build the Application'){
-        echo "Cleaning... Compiling...Testing... Packaging..."
-        //sh 'mvn clean package'
-        sh "${mavenCMD} clean package"        
-    }
-    
-    stage('publish test reports'){
-        publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: '/var/lib/jenkins/workspace/Capstone-Project-Live-Demo/target/surefire-reports', reportFiles: 'index.html', reportName: 'HTML Report', reportTitles: '', useWrapperFileDirectly: true])
-    }
-    
-    stage('Containerize the application'){
-        echo 'Creating Docker image'
-        sh "${dockerCMD} build -t shubhamkushwah123/insure-me:${tagName} ."
-    }
-    
-    stage('Pushing it ot the DockerHub'){
-        echo 'Pushing the docker image to DockerHub'
-        withCredentials([string(credentialsId: 'dock-password', variable: 'dockerHubPassword')]) {
-        sh "${dockerCMD} login -u shubhamkushwah123 -p ${dockerHubPassword}"
-        sh "${dockerCMD} push shubhamkushwah123/insure-me:${tagName}"
-            
+
+        stage('Build the Application') {
+            steps {
+                echo "Cleaning, Compiling, Testing, Packaging..."
+                sh "${MAVEN_CMD} clean package"
+            }
         }
-        
-    stage('Configure and Deploy to the test-server'){
-        ansiblePlaybook become: true, credentialsId: 'ansible-key', disableHostKeyChecking: true, installation: 'ansible', inventory: '/etc/ansible/hosts', playbook: 'ansible-playbook.yml'
-    }
-        
-        
+
+        stage('Publish Test Reports') {
+            steps {
+                publishHTML([
+                    allowMissing: false, 
+                    alwaysLinkToLastBuild: false, 
+                    keepAll: false, 
+                    reportDir: 'target/surefire-reports', 
+                    reportFiles: 'index.html', 
+                    reportName: 'HTML Report'
+                ])
+            }
+        }
+
+        stage('Containerize the Application') {
+            steps {
+                echo 'Creating Docker image...'
+                sh "${DOCKER_CMD} build -t shamashaik19/insure-me:${TAG_NAME} ."
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                echo 'Pushing the Docker image to DockerHub...'
+                withCredentials([usernamePassword(credentialsId: 'dock-password', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo $DOCKER_PASS | ${DOCKER_CMD} login -u $DOCKER_USER --password-stdin"
+                    sh "${DOCKER_CMD} push shamashaik19/insure-me:${TAG_NAME}"
+                }
+            }
+        }
+
+        stage('Configure and Deploy to Test Server') {
+            steps {
+                echo 'Deploying application using Ansible...'
+                ansiblePlaybook(
+                    become: true,
+                    credentialsId: 'ansible-key',
+                    disableHostKeyChecking: true,
+                    installation: 'ansible',
+                    inventory: '/etc/ansible/hosts',
+                    playbook: 'ansible-playbook.yml'
+                )
+            }
+        }
     }
 }
-
-
-
-
